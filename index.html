@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<title>Image Grid</title>
+<style>
+  :root { color-scheme: dark; --bg: #111; --panel: #1d1d20; --line: #3a3a40; --fg: #eee; --muted: #a0a0a8; --accent: #ffb347; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-size: 16px; font-family: system-ui, sans-serif; line-height: 1.4; background: var(--bg); color: var(--fg); }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  h2 { font-size: 1rem; margin: 0; }
+  .panel { background: var(--panel); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  .row > label { flex: 1 1 120px; }
+  label { display: grid; gap: 4px; color: var(--muted); font-size: .875rem; }
+  input, button { font: inherit; color: inherit; }
+  input[type=number] { min-height: 48px; padding: 0 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; width: 100%; }
+  input[type=range] { width: 100%; min-height: 32px; accent-color: var(--accent); }
+  input[type=color] { width: 64px; height: 48px; border: 0; padding: 0; background: none; cursor: pointer; }
+  button { min-height: 48px; padding: 0 16px; background: #2c2c32; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  .primary, [aria-pressed=true] { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+  :focus-visible, .drop:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .drop { position: relative; min-height: 96px; border: 2px dashed var(--line); border-radius: 12px; place-items: center; text-align: center; padding: 16px; cursor: pointer; color: var(--fg); font-size: 1rem; }
+  .drop.over { border-color: var(--accent); }
+  .drop input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  #chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  #chips button { border-radius: 999px; }
+  #frame { margin: 0 auto; max-width: 100%; background: #fff; }
+  #preview { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  .check { display: flex; align-items: center; gap: 12px; min-height: 48px; color: var(--fg); font-size: 1rem; }
+  .check input { width: 24px; height: 24px; accent-color: var(--accent); }
+  .hint { color: var(--muted); font-size: .875rem; margin: 0; }
+
+  #cell { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #000; color: var(--fg); }
+  #cell[open] { display: flex; flex-direction: column; }
+  #cell .bar { display: flex; gap: 8px; align-items: center; padding: 12px; }
+  #cell .bar > * { flex: 1; }
+  #cellTitle { font-size: 1.125rem; font-weight: 600; }
+  #cellWrap { flex: 1; min-height: 0; display: grid; place-items: center; touch-action: none; padding: 0 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Image Grid</h1>
+
+  <section class="panel">
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="image/*">
+      <span id="dropText">Drop an image here or tap to choose</span>
+    </label>
+    <div class="row">
+      <label>Canvas width (cm)<input type="number" id="w" min="0.5" step="0.1" inputmode="decimal"></label>
+      <label>Canvas height (cm)<input type="number" id="h" min="0.5" step="0.1" inputmode="decimal"></label>
+    </div>
+    <h2>Grid</h2>
+    <div id="chips" role="group" aria-label="Suggested grids"></div>
+    <div class="row">
+      <label>Columns<input type="number" id="cols" min="1" max="100" step="1" inputmode="numeric"></label>
+      <label>Rows<input type="number" id="rows" min="1" max="100" step="1" inputmode="numeric"></label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div id="frame"><canvas id="preview" tabindex="0" aria-label="Preview. Drag to move, pinch or scroll to zoom, tap a cell to open it. Arrow keys move, plus and minus zoom."></canvas></div>
+    <p class="hint">Drag to move · pinch or scroll to zoom · tap a cell to paint it</p>
+    <div class="row">
+      <button id="fit">Fit</button>
+      <button id="fill">Fill</button>
+      <button id="cells">Open cells</button>
+      <button id="export" class="primary">Export PNG</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Grid options</h2>
+    <div class="row">
+      <label>Line color<input type="color" id="color" value="#ff3b30"></label>
+      <label>Thickness<input type="range" id="thick" min="0.5" max="6" step="0.5" value="2"></label>
+      <label>Opacity<input type="range" id="opacity" min="0.1" max="1" step="0.05" value="0.8"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="labels"> Cell labels (A1, B2…)</label>
+    <label class="check"><input type="checkbox" id="diag"> Diagonal guides</label>
+  </section>
+</main>
+
+<dialog id="cell" aria-labelledby="cellTitle">
+  <div class="bar">
+    <span id="cellTitle"></span>
+    <button id="close" style="flex:0 0 auto">Close</button>
+  </div>
+  <div id="cellWrap"><canvas id="cellCanvas"></canvas></div>
+  <div class="bar">
+    <button id="prev">‹ Prev</button>
+    <button id="done" aria-pressed="false">Mark done</button>
+    <button id="next">Next ›</button>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const fmt = (v, d = 1) => String(+v.toFixed(d));
+
+// Returns the top 5 grid suggestions for a W×H cm canvas.
+function GridCalculator(W, H) {
+  const out = [];
+  const whole = v => Math.abs(v - Math.round(v)) < 1e-9;
+  for (let k = 1; k * 0.5 <= Math.min(W, H) / 2; k++) {
+    const s = k * 0.5;
+    if (whole(W / s) && whole(H / s)) out.push({ cols: Math.round(W / s), rows: Math.round(H / s), cw: s, ch: s, perfect: true, err: 0 });
+  }
+  for (let c = 2; c <= 30; c++) {
+    const cw = W / c, rows = Math.round(H / cw);
+    if (rows < 1) continue;
+    const ch = H / rows, err = Math.abs(cw - ch) / cw;
+    if (err < 0.1 && !out.some(g => g.cols === c && g.rows === rows)) out.push({ cols: c, rows, cw, ch, perfect: false, err });
+  }
+  const round = g => g.cw === g.ch && [1, 2, 2.5, 5].includes(g.cw);
+  const sized = g => g.cols * g.rows >= 20 && g.cols * g.rows <= 150;
+  out.sort((a, b) => b.perfect - a.perfect || round(b) - round(a) || a.err - b.err || sized(b) - sized(a));
+  return out.slice(0, 5);
+}
+
+const gridLabel = g => `${g.cols}×${g.rows} · ` + (Math.abs(g.cw - g.ch) < 1e-9 ? `${fmt(g.cw)} cm squares` : `${fmt(g.cw)}×${fmt(g.ch)} cm`);
+const colName = i => (i >= 26 ? String.fromCharCode(64 + Math.floor(i / 26)) : '') + String.fromCharCode(65 + i % 26);
+const cellName = i => colName(i % cols) + (Math.floor(i / cols) + 1);
+
+let W, H, cols = 4, rows = 4, img = null, imgName = '', done = new Set(), cur = 0, wakeLock = null;
+const view = { x: 0, y: 0, s: 1 }; // image top-left in cm, and cm per image pixel
+const frame = $('#frame'), preview = $('#preview'), chips = $('#chips');
+const cellDlg = $('#cell'), cellCanvas = $('#cellCanvas'), cellWrap = $('#cellWrap');
+
+const opt = {};
+const optInputs = { color: e => e.value, thick: e => +e.value, opacity: e => +e.value, labels: e => e.checked, diag: e => e.checked };
+for (const [id, read] of Object.entries(optInputs)) {
+  const el = $('#' + id);
+  opt[id] = read(el);
+  el.addEventListener('input', () => { opt[id] = read(el); draw(); });
+}
+
+// Draws region r (cm) of the painting at ppc pixels per cm. lineScale scales grid line px (for export).
+function render(ctx, ppc, r, lineScale, { dim = false, labels = false } = {}) {
+  const cw = W / cols, ch = H / rows;
+  ctx.save();
+  ctx.scale(ppc, ppc);
+  ctx.translate(-r.x, -r.y);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  if (img) ctx.drawImage(img, view.x, view.y, img.naturalWidth * view.s, img.naturalHeight * view.s);
+  if (dim) {
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    for (const i of done) ctx.fillRect(i % cols * cw, Math.floor(i / cols) * ch, cw, ch);
+  }
+  ctx.globalAlpha = opt.opacity;
+  ctx.strokeStyle = opt.color;
+  ctx.lineWidth = opt.thick * lineScale / ppc;
+  ctx.beginPath();
+  for (let i = 0; i <= cols; i++) { ctx.moveTo(i * cw, 0); ctx.lineTo(i * cw, H); }
+  for (let j = 0; j <= rows; j++) { ctx.moveTo(0, j * ch); ctx.lineTo(W, j * ch); }
+  ctx.stroke();
+  if (opt.diag) {
+    ctx.lineWidth /= 2;
+    ctx.setLineDash([ctx.lineWidth * 6, ctx.lineWidth * 6]);
+    ctx.beginPath();
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+      const x = i * cw, y = j * ch;
+      ctx.moveTo(x, y); ctx.lineTo(x + cw, y + ch);
+      ctx.moveTo(x + cw, y); ctx.lineTo(x, y + ch);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+  // Labels drawn unscaled: tiny fractional font sizes render badly in some browsers.
+  if (labels && opt.labels) {
+    const size = Math.min(cw, ch) * ppc * 0.22, pad = size * 0.3;
+    ctx.save();
+    ctx.font = `600 ${size}px system-ui, sans-serif`;
+    ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = size / 5;
+    ctx.strokeStyle = 'rgba(0,0,0,.7)';
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < cols * rows; i++) {
+      const x = (i % cols * cw - r.x) * ppc + pad, y = (Math.floor(i / cols) * ch - r.y) * ppc + pad;
+      ctx.strokeText(cellName(i), x, y);
+      ctx.fillText(cellName(i), x, y);
+    }
+    ctx.restore();
+  }
+}
+
+function sizeCanvas(c, w, h) {
+  const dpr = devicePixelRatio || 1, bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+  if (c.width !== bw || c.height !== bh) { c.width = bw; c.height = bh; }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+
+function draw() {
+  const w = frame.clientWidth;
+  if (!w || !W) return;
+  const ctx = sizeCanvas(preview, w, frame.clientHeight);
+  render(ctx, w / W, { x: 0, y: 0, w: W, h: H }, 1, { dim: true, labels: true });
+}
+new ResizeObserver(draw).observe(frame);
+
+function resetView(mode) {
+  if (img) {
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    view.s = Math[mode === 'fit' ? 'min' : 'max'](W / iw, H / ih);
+    view.x = (W - iw * view.s) / 2;
+    view.y = (H - ih * view.s) / 2;
+  }
+  draw();
+}
+
+const doneKey = () => `done:${imgName}:${W}x${H}:${cols}x${rows}`;
+const loadDone = () => { done = new Set(store.get(doneKey(), [])); };
+
+function setGrid(c, r) {
+  cols = c; rows = r;
+  $('#cols').value = c; $('#rows').value = r;
+  for (const b of chips.children) b.setAttribute('aria-pressed', b.dataset.grid === `${c}x${r}`);
+  loadDone();
+  draw();
+}
+
+function setSize() {
+  const w = parseFloat($('#w').value), h = parseFloat($('#h').value);
+  if (!(w > 0 && h > 0)) return;
+  W = w; H = h;
+  store.set('size', { W, H });
+  frame.style.aspectRatio = `${W} / ${H}`;
+  frame.style.width = `min(100%, ${(70 * W / H).toFixed(2)}vh)`;
+  const list = GridCalculator(W, H);
+  chips.replaceChildren(...list.map(g => {
+    const b = document.createElement('button');
+    b.textContent = gridLabel(g);
+    b.dataset.grid = `${g.cols}x${g.rows}`;
+    b.onclick = () => setGrid(g.cols, g.rows);
+    return b;
+  }));
+  if (list[0]) setGrid(list[0].cols, list[0].rows); else setGrid(cols, rows);
+  resetView('fill');
+}
+
+function setManualGrid() {
+  const c = Math.round(+$('#cols').value), r = Math.round(+$('#rows').value);
+  if (c >= 1 && c <= 100 && r >= 1 && r <= 100) setGrid(c, r);
+}
+
+function loadFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const im = new Image();
+  im.onload = () => {
+    if (img) URL.revokeObjectURL(img.src);
+    img = im; imgName = file.name;
+    $('#dropText').textContent = `${file.name} — tap or drop to replace`;
+    loadDone();
+    resetView('fill');
+  };
+  im.onerror = () => alert('Could not read that image.');
+  im.src = URL.createObjectURL(file);
+}
+
+// --- preview gestures: drag = pan, two pointers = pinch, short tap = open cell
+const pts = new Map();
+let last = null, moved = 0, multi = false;
+const pos = e => { const r = preview.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+function gesture() {
+  const p = [...pts.values()];
+  if (!p.length) return null;
+  return {
+    x: p.reduce((s, q) => s + q.x, 0) / p.length,
+    y: p.reduce((s, q) => s + q.y, 0) / p.length,
+    d: p.length > 1 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0,
+  };
+}
+function zoomAt(px, py, f) {
+  const ppc = preview.clientWidth / W, x = px / ppc, y = py / ppc;
+  view.x = x - (x - view.x) * f;
+  view.y = y - (y - view.y) * f;
+  view.s *= f;
+}
+preview.addEventListener('pointerdown', e => {
+  preview.setPointerCapture(e.pointerId);
+  if (!pts.size) { moved = 0; multi = false; }
+  pts.set(e.pointerId, pos(e));
+  multi ||= pts.size > 1;
+  last = gesture();
+});
+preview.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, pos(e));
+  const g = gesture(), ppc = preview.clientWidth / W;
+  moved += Math.hypot(g.x - last.x, g.y - last.y);
+  view.x += (g.x - last.x) / ppc;
+  view.y += (g.y - last.y) / ppc;
+  if (g.d && last.d) zoomAt(g.x, g.y, g.d / last.d);
+  last = g;
+  draw();
+});
+function pointerEnd(e) {
+  if (!pts.has(e.pointerId)) return;
+  if (e.type === 'pointerup' && !multi && moved < 6) {
+    const p = pts.get(e.pointerId), ppc = preview.clientWidth / W;
+    const c = Math.min(cols - 1, Math.floor(p.x / ppc / (W / cols))), r = Math.min(rows - 1, Math.floor(p.y / ppc / (H / rows)));
+    openCell(r * cols + c);
+  }
+  pts.delete(e.pointerId);
+  last = gesture();
+}
+preview.addEventListener('pointerup', pointerEnd);
+preview.addEventListener('pointercancel', pointerEnd);
+preview.addEventListener('wheel', e => {
+  e.preventDefault();
+  const p = pos(e);
+  zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0015));
+  draw();
+}, { passive: false });
+preview.addEventListener('keydown', e => {
+  const step = W / cols / 4, mid = () => zoomAt(preview.clientWidth / 2, preview.clientHeight / 2, e.key === '-' ? 1 / 1.1 : 1.1);
+  const keys = { ArrowLeft: () => view.x -= step, ArrowRight: () => view.x += step, ArrowUp: () => view.y -= step, ArrowDown: () => view.y += step, '+': mid, '=': mid, '-': mid };
+  if (!keys[e.key]) return;
+  e.preventDefault();
+  keys[e.key]();
+  draw();
+});
+
+// --- cell mode
+async function lockWake() { try { wakeLock = await navigator.wakeLock.request('screen'); } catch {} }
+function openCell(i) {
+  cur = i;
+  if (!cellDlg.open) cellDlg.showModal();
+  lockWake();
+  showCell();
+}
+function showCell() {
+  const n = cols * rows, cw = W / cols, ch = H / rows;
+  $('#cellTitle').textContent = `${cellName(cur)} · ${fmt(cw, 2)} × ${fmt(ch, 2)} cm · ${cur + 1}/${n}`;
+  $('#done').setAttribute('aria-pressed', done.has(cur));
+  $('#done').textContent = done.has(cur) ? 'Done ✓' : 'Mark done';
+  $('#prev').disabled = cur === 0;
+  $('#next').disabled = cur === n - 1;
+  const box = cellWrap.getBoundingClientRect(), ppc = Math.min((box.width - 24) / cw, box.height / ch);
+  cellCanvas.style.width = cw * ppc + 'px';
+  cellCanvas.style.height = ch * ppc + 'px';
+  const ctx = sizeCanvas(cellCanvas, cw * ppc, ch * ppc);
+  render(ctx, ppc, { x: cur % cols * cw, y: Math.floor(cur / cols) * ch, w: cw, h: ch }, 1);
+}
+const stepCell = d => { cur = Math.max(0, Math.min(cols * rows - 1, cur + d)); showCell(); };
+$('#prev').onclick = () => stepCell(-1);
+$('#next').onclick = () => stepCell(1);
+$('#close').onclick = () => cellDlg.close();
+$('#done').onclick = () => {
+  done.has(cur) ? done.delete(cur) : done.add(cur);
+  store.set(doneKey(), [...done]);
+  showCell();
+};
+cellDlg.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') stepCell(-1);
+  if (e.key === 'ArrowRight') stepCell(1);
+});
+cellDlg.addEventListener('close', () => { wakeLock?.release().catch(() => {}); wakeLock = null; draw(); });
+document.addEventListener('visibilitychange', () => { if (cellDlg.open && document.visibilityState === 'visible') lockWake(); });
+let swipeX = null;
+cellWrap.addEventListener('pointerdown', e => { swipeX = e.clientX; });
+cellWrap.addEventListener('pointerup', e => {
+  if (swipeX !== null && Math.abs(e.clientX - swipeX) > 50) stepCell(e.clientX < swipeX ? 1 : -1);
+  swipeX = null;
+});
+addEventListener('resize', () => { if (cellDlg.open) showCell(); });
+
+// --- export
+$('#export').onclick = () => {
+  const ppc = 3000 / Math.max(W, H), c = document.createElement('canvas');
+  c.width = Math.round(W * ppc);
+  c.height = Math.round(H * ppc);
+  render(c.getContext('2d'), ppc, { x: 0, y: 0, w: W, h: H }, ppc / (frame.clientWidth / W), { labels: true });
+  c.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `imagegrid-${cols}x${rows}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }, 'image/png');
+};
+
+// --- wiring
+$('#file').addEventListener('change', e => loadFile(e.target.files[0]));
+const drop = $('#drop');
+addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+addEventListener('dragleave', e => { if (!e.relatedTarget) drop.classList.remove('over'); });
+addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); loadFile(e.dataTransfer.files[0]); });
+$('#w').addEventListener('change', setSize);
+$('#h').addEventListener('change', setSize);
+$('#cols').addEventListener('change', setManualGrid);
+$('#rows').addEventListener('change', setManualGrid);
+$('#fit').onclick = () => resetView('fit');
+$('#fill').onclick = () => resetView('fill');
+$('#cells').onclick = () => { const n = cols * rows; let i = 0; while (i < n - 1 && done.has(i)) i++; openCell(i); };
+
+const saved = store.get('size', { W: 30, H: 40 });
+$('#w').value = saved.W;
+$('#h').value = saved.H;
+setSize();
+
+// Self-test
+(() => {
+  const has = (W, H, c, r, s) => GridCalculator(W, H).some(g => g.cols === c && g.rows === r && g.cw === s && g.ch === s);
+  const ok = [[21, 15, 7, 5, 3], [20, 20, 4, 4, 5], [20, 20, 10, 10, 2]].every(([w, h, c, r, s]) => {
+    const pass = has(w, h, c, r, s);
+    console.assert(pass, `${w}×${h} should include ${c}×${r} @ ${s} cm`);
+    return pass;
+  });
+  console.log(`GridCalculator self-test: ${ok ? 'pass' : 'FAIL'}`);
+})();
+</script>
+</body>
+</html>
